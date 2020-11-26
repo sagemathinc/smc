@@ -88,7 +88,9 @@ interface SplittedPath {
 
 export function path_split(path: string): SplittedPath {
   const v = path.split("/");
-  return { head: v.slice(0, -1).join("/"), tail: v[v.length - 1] };
+  const head = v.slice(0, -1).join("/") ?? "";
+  const tail = v[v.length - 1] ?? "";
+  return { head, tail };
 }
 
 export function capitalize(s: string): string {
@@ -515,12 +517,12 @@ export function replace_all_function(
 ): string {
   const v = s.split(search);
   const w: string[] = [];
-  for (let i = 0; i < v.length; i++) {
-    w.push(v[i]);
-    if (i < v.length - 1) {
-      w.push(replace_f(i));
+  v.forEach((val, idx) => {
+    w.push(val);
+    if (idx < v.length - 1) {
+      w.push(replace_f(idx));
     }
-  }
+  });
   return w.join("");
 }
 
@@ -784,11 +786,11 @@ export function parse_number_input(
   }
   if (v.length === 2) {
     // a fraction
-    val = parseFloat(v[0]) / parseFloat(v[1]);
+    val = parseFloat(v[0]!) / parseFloat(v[1]!);
   }
   if (v.length === 1) {
-    val = parseFloat(v[0]);
-    if (isNaN(val) || v[0].trim() === "") {
+    val = parseFloat(v[0]!);
+    if (isNaN(val) || v[0]!.trim() === "") {
       // Shockingly, whitespace returns false for isNaN!
       return undefined;
     }
@@ -891,8 +893,7 @@ export function search_split(search: string): string[] {
   const terms: string[] = [];
   const v = search.split('"');
   const { length } = v;
-  for (let i = 0; i < v.length; i++) {
-    let element = v[i];
+  v.forEach((element, i) => {
     element = element.trim();
     if (element.length !== 0) {
       // the even elements lack quotation
@@ -904,7 +905,7 @@ export function search_split(search: string): string[] {
         terms.push(element);
       }
     }
-  }
+  });
   return terms;
 }
 
@@ -1221,7 +1222,7 @@ export function parse_user_search(query: string) {
           // "<validEmail>"withquotes@mail.com
           if (a[0] === "<") {
             const match = email_re.exec(a);
-            a = match != null ? match[1] : a;
+            a = match != null ? match[1]! : a;
           }
           if (is_valid_email_address(a)) {
             r.email_queries.push(a);
@@ -1461,7 +1462,7 @@ export function parse_hashtags(t: string): [number, number][] {
       return v;
     }
     base += i + 1;
-    if (t[i + 1] === "#" || !(i === 0 || t[i - 1].match(/\s/))) {
+    if (t[i + 1] === "#" || !(i === 0 || t[i - 1]!.match(/\s/))) {
       t = t.slice(i + 1);
       continue;
     }
@@ -1807,7 +1808,9 @@ export function peer_grading(
   const L = students.length;
   for (let i = 0; i < L; i++) {
     for (let j = i + 1; j <= i + N; j++) {
-      assignment[s_random[i]].push(s_random[j % L]);
+      const student = s_random[i]!;
+      const collegue = s_random[j % L]!;
+      assignment[student]!.push(collegue);
     }
   }
 
@@ -1859,10 +1862,8 @@ export function suggest_duplicate_filename(name: string): string {
   const idx = Math.max(idx_dash, idx_under);
   let new_name: string | undefined = undefined;
   if (idx > 0) {
-    const [prefix, ending] = Array.from([
-      name.slice(0, idx + 1),
-      name.slice(idx + 1),
-    ]);
+    const prefix = name.slice(0, idx + 1)!;
+    const ending = name.slice(idx + 1)!;
     const num = parseInt(ending);
     if (!Number.isNaN(num)) {
       new_name = `${prefix}${num + 1}`;
@@ -1905,8 +1906,7 @@ export function top_sort(
   const graph_nodes = {};
 
   // Ready the nodes for top sort
-  for (const name in DAG) {
-    const parents = DAG[name];
+  for (const [name, parents] of Object.entries(DAG)) {
     if (graph_nodes[name] == null) {
       graph_nodes[name] = {};
     }
@@ -2002,8 +2002,7 @@ export function create_dependency_graph(obj: {
   [name: string]: Function & { dependency_names?: string };
 }): { [name: string]: string[] } {
   const DAG = {};
-  for (const name in obj) {
-    const written_func = obj[name];
+  for (const [name, written_func] of Object.entries(obj)) {
     DAG[name] = written_func.dependency_names ?? [];
   }
   return DAG;
