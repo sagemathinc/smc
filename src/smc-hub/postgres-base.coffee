@@ -26,6 +26,7 @@ EventEmitter = require('events')
 
 fs      = require('fs')
 async   = require('async')
+awaiting = require("awaiting")
 escapeString = require('sql-string-escape')
 validator = require('validator')
 {callback2} = require('smc-util/async-utils')
@@ -35,12 +36,54 @@ if not pg?
     throw Error("YOU MUST INSTALL the pg-native npm module")
 # You can uncommment this to use the pure javascript driver.
 #  However: (1) it can be 5x slower or more!
+#               2019: benchmarks for pg-native do not show any benefit
+#               https://mitar.tnode.com/post/in-nodejs-always-query-in-json-from-postgresql/
 #           (2) I think it corrupts something somehow in a subtle way, since our whole
 #               syncstring system was breaking... until I switched to native.  Not sure.
 #pg      = require('pg')
 
+MetricsRecorder  = require('./metrics-recorder')
 winston      = require('./winston-metrics').get_logger('postgres')
 {do_query_with_pg_params} = require('./postgres/set-pg-params')
+
+
+LIMITER_STATS = MetricsRecorder.new_gauge('bottleneck_stats', "Bottleneck's internal counter stats", ['stats'])
+LIMITER_DROPPED = MetricsRecorder.new_counter('bottleneck_droppped_total',
+                                                     'Dropped Queries',
+                                                     ['query', 'priority'])
+DB_CONCURRENT_WARN = parseInt(process.env.SMC_DB_CONCURRENT_WARN ? '100')
+# 2x above the warning limit, we start to discard queries
+LIMITER_HIGH_WATER = Math.round(DB_CONCURRENT_WARN * 2)
+# we allow half as many queries to be sent as the concurrent warning is set to
+LIMITER_MAX_CONCURRENT = DB_CONCURRENT_WARN // 2
+winston.debug("LIMITER params: high water=", LIMITER_HIGH_WATER, " max concurrent=", LIMITER_MAX_CONCURRENT)
+Bottleneck = require("bottleneck")
+# minTime: a request takes least that many ms (the quickest DB queries take 0.5 ms)
+# an interesting test is to increase minTime to 1000 (1 sec)
+# Then, queries should pile up until maxConcurrent and the statistics increase to e.g.
+# LIMITER {"RECEIVED":0,"QUEUED":19,"RUNNING":23,"EXECUTING":0}
+LIMITER = new Bottleneck(
+    minTime: 1
+    maxConcurrent: LIMITER_MAX_CONCURRENT
+    highWater: LIMITER_HIGH_WATER
+    strategy: Bottleneck.strategy.OVERFLOW_PRIORITY
+)
+# basic monitoring
+limiter_stats = =>
+    counts = LIMITER.counts()
+    winston.debug("LIMITER", JSON.stringify(counts))
+    for k, v of counts
+        LIMITER_STATS.labels(k).set(v)
+setInterval(limiter_stats, 10000)
+
+LIMITER.on "dropped", (dropped) =>
+    opts = dropped.args[0] ? {}
+    what = opts.query?.slice(0, 256) ? opts.table ? opts.where?.table_name ? '-'
+    LIMITER_DROPPED.labels(what, dropped.options.priority).inc(1)
+
+#LIMITER.on "executing", (info) =>
+#    #winston.debug("limiter done", JSON.stringify(info))
+#    winston.debug("LIMITER executing", JSON.stringify(LIMITER.counts()))
 
 misc_node = require('smc-util-node/misc_node')
 
@@ -375,7 +418,6 @@ class exports.PostgreSQL extends EventEmitter    # emits a 'connect' event whene
 
     _init_metrics: =>
         # initialize metrics
-        MetricsRecorder  = require('./metrics-recorder')
         @query_time_histogram = MetricsRecorder.new_histogram('db_query_ms_histogram', 'db queries'
             buckets : [1, 5, 10, 20, 50, 100, 200, 500, 1000, 5000, 10000]
             labels: ['table']
@@ -384,6 +426,9 @@ class exports.PostgreSQL extends EventEmitter    # emits a 'connect' event whene
             'Concurrent queries (started and finished)',
             ['state']
         )
+        @query_counter = MetricsRecorder.new_counter('db_queries_total',
+                                                     'All Queries',
+                                                     ['priority'])
 
     async_query: (opts) =>
         return await callback2(@_query.bind(@), opts)
@@ -430,6 +475,7 @@ class exports.PostgreSQL extends EventEmitter    # emits a 'connect' event whene
             safety_check: true
             retry_until_success : undefined  # if given, should be options to misc.retry_until_success
             pg_params   : undefined  # key/value map of postgres parameters, which will be set for the query in a single transaction
+            priority    : undefined
             timeout_s   : undefined  # by default, there is a "statement_timeout" set. set to 0 to disable or a number in seconds
             cb          : undefined
 
@@ -483,6 +529,22 @@ class exports.PostgreSQL extends EventEmitter    # emits a 'connect' event whene
         misc.retry_until_success(retry_opts)
 
     __do_query: (opts) =>
+        opts.priority = opts.priority ? 5
+        limiteropts =
+            expiration: 2 * 60 * 1000 # ms, basically a safeguard against never calling a cb()
+            priority: opts.priority # must be 0 to 9, lower more important, 5 default, user queries <=4
+        done = =>
+        LIMITER.submit(limiteropts, @__do_query_actual, opts, done)
+
+    __do_query_actual: (opts, cb_limiter) =>
+        @query_counter.labels(opts.priority).inc(1)
+
+        # after everything is done, we have to call the limiter callback
+        cb_orig = opts.cb
+        opts.cb = (err, res) =>
+            cb_orig?(err, res)
+            cb_limiter()
+
         dbg = @_dbg("_query('#{misc.trunc(opts.query?.replace(/\n/g, " "),250)}',id='#{misc.uuid().slice(0,6)}')")
         if not @is_connected()
             # TODO: should also check that client is connected.
