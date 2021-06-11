@@ -1173,9 +1173,13 @@ export class ProjectActions extends Actions<ProjectStoreState> {
         }
         if (path == null) throw Error("bug"); // make typescript happy
         if (the_listing != null) {
-          const map = store
-            .get("directory_listings")
-            .set(path, err ? err : immutable.fromJS(the_listing.files));
+          const update = err
+            ? err
+            : immutable.fromJS({
+                files: the_listing.files,
+                git_dir: the_listing.git_dir,
+              });
+          const map = store.get("directory_listings").set(path, update);
           this.setState({ directory_listings: map });
         }
         // done! releasing lock, then executing callback(s)
@@ -1200,10 +1204,10 @@ export class ProjectActions extends Actions<ProjectStoreState> {
     if (store == null) return;
     const listings = store.get_listings();
     try {
-      const files = await listings.get_listing_directly(path);
+      const dir_listing = await listings.get_listing_directly(path);
       const directory_listings = store
         .get("directory_listings")
-        .set(path, immutable.fromJS(files));
+        .set(path, immutable.fromJS(dir_listing));
       this.setState({ directory_listings });
     } catch (err) {
       console.warn(`Unable to fetch all files -- "${err}"`);
@@ -1284,7 +1288,7 @@ export class ProjectActions extends Actions<ProjectStoreState> {
       const current_path = store.get("current_path");
       const names = store
         .get("displayed_listing")
-        .listing.map((a) => misc.path_to_file(current_path, a.name));
+        .files.map((a) => misc.path_to_file(current_path, a.name));
       range = misc.get_array_range(names, most_recent, file);
     }
 
@@ -1401,7 +1405,7 @@ export class ProjectActions extends Actions<ProjectStoreState> {
       return undefined; // simple fallback
     }
     if (listing != null) {
-      listing.map(function (x) {
+      listing.get("files").map(function (x) {
         files_in_dir[x.get("name")] = true;
       });
     }

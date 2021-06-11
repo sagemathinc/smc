@@ -17,7 +17,7 @@ import {
   seconds_ago,
 } from "../smc-util/misc";
 import { DirectoryListingEntry } from "../smc-util/types";
-import { get_listing } from "../directory-listing";
+import { get_listing, get_git_dir } from "../directory-listing";
 import {
   WATCH_TIMEOUT_MS,
   MAX_FILES_PER_PATH,
@@ -57,6 +57,7 @@ interface Listing {
   missing?: number;
   error?: string;
   deleted?: string[];
+  git_dir?: string;
 }
 export type ImmutableListing = TypedMap<Listing>;
 
@@ -225,9 +226,12 @@ class ListingsTable {
 
   private async compute_listing(path: string): Promise<void> {
     const time = new Date();
-    let listing;
+    let listing, git_dir;
     try {
-      listing = await get_listing(path, true);
+      [listing, git_dir] = await Promise.all([
+        get_listing(path, true),
+        get_git_dir(path),
+      ]);
       if (!this.is_ready()) return;
     } catch (err) {
       if (!this.is_ready()) return;
@@ -276,7 +280,7 @@ class ListingsTable {
     // save fine to the database. (TODO: this is just a workaround.)
     const error = y?.get("error") != null ? "" : undefined;
 
-    this.set({ path, listing, time, missing, deleted, error });
+    this.set({ path, listing, time, missing, deleted, error, git_dir });
   }
 
   private start_watching(path: string): void {

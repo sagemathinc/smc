@@ -148,7 +148,7 @@ export async function get_directory_listing2(opts: ListingOpts): Promise<any> {
       if (store.getIn(["directory_listings", opts.path]) != null) {
         // just update an already loading listing:
         try {
-          return { files: await listings.get_listing_directly(opts.path) };
+          return await listings.get_listing_directly(opts.path);
         } catch (err) {
           console.warn(
             `WARNING: problem getting directory listing ${err}; falling back`
@@ -164,7 +164,7 @@ export async function get_directory_listing2(opts: ListingOpts): Promise<any> {
     // return what we have now:
     const files = await listings.get(opts.path);
     if (files != null) {
-      return { files };
+      return files;
     }
     await once(listings, "change");
   }

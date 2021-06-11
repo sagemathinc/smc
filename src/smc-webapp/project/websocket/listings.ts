@@ -15,7 +15,7 @@ import { once } from "smc-util/async-utils";
 import { deleted_file_variations } from "smc-util/delete-files";
 import { exec, query } from "../../frame-editors/generic/client";
 import { get_directory_listing } from "../directory-listing";
-import { DirectoryListingEntry } from "smc-util/types";
+import { DirectoryListingEntry, DirectoryListing } from "smc-util/types";
 import { WATCH_TIMEOUT_MS } from "smc-util/db-schema/listings";
 export const WATCH_THROTTLE_MS = WATCH_TIMEOUT_MS / 2;
 
@@ -32,7 +32,9 @@ interface Listing {
   missing?: number;
   error?: string;
   deleted?: string[];
+  git_dir?: string;
 }
+
 export type ImmutableListing = TypedMap<Listing>;
 
 export class Listings extends EventEmitter {
@@ -83,7 +85,7 @@ export class Listings extends EventEmitter {
     });
   }
 
-  public async get(path: string): Promise<DirectoryListingEntry[] | undefined> {
+  public async get(path: string): Promise<DirectoryListing | undefined> {
     if (this.state != "ready") {
       try {
         const listing = await this.get_using_database(path);
@@ -108,7 +110,7 @@ export class Listings extends EventEmitter {
 
     const x = this.get_record(path);
     if (x == null || x.get("error")) return;
-    return x.get("listing")?.toJS();
+    return { files: x.get("listing")?.toJS(), git_dir: x.get("git_dir") };
   }
 
   public async get_deleted(path: string): Promise<List<string> | undefined> {
@@ -211,7 +213,9 @@ export class Listings extends EventEmitter {
   //  - undefined if directory listing not known (and error not known either).
   public async get_for_store(
     path: string
-  ): Promise<List<ImmutablePathEntry> | undefined | string> {
+  ): Promise<
+    { git_dir?: string; files?: List<ImmutablePathEntry> } | undefined | string
+  > {
     if (this.state != "ready") {
       const x = await this.get_using_database(path);
       if (x == null) return x;
@@ -222,25 +226,29 @@ export class Listings extends EventEmitter {
     if (x.get("error")) {
       return x.get("error");
     }
-    return x.get("listing");
+    return { files: x.get("listing"), git_dir: x.get("git_dir") };
   }
 
   public async get_using_database(
     path: string
-  ): Promise<DirectoryListingEntry[] | undefined> {
+  ): Promise<DirectoryListing | undefined> {
     const q = await query({
       query: {
         listings: {
           project_id: this.project_id,
           path,
           listing: null,
+          git_dir: null,
         },
       },
     });
     if (q.query.listings?.error) {
       throw Error(q.query.listings?.error);
     }
-    return q.query.listings?.listing;
+    return {
+      files: q.query.listings?.listing,
+      git_dir: q.query.listings?.git_dir,
+    };
   }
 
   public get_missing(path: string): number | undefined {
@@ -250,9 +258,7 @@ export class Listings extends EventEmitter {
       ?.get("missing");
   }
 
-  public async get_listing_directly(
-    path: string
-  ): Promise<DirectoryListingEntry[]> {
+  public async get_listing_directly(path: string): Promise<DirectoryListing> {
     const store = redux.getStore("projects");
     // make sure that our relationship to this project is known.
     if (store == null) throw Error("bug");
@@ -270,7 +276,7 @@ export class Listings extends EventEmitter {
     if (x.error != null) {
       throw Error(x.error);
     } else {
-      return x.files;
+      return { files: x.files, git_dir: x.git_dir };
     }
   }
 

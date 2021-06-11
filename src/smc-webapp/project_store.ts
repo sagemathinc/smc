@@ -36,6 +36,7 @@ import { ProjectLogMap } from "./project/history/types";
 import { alert_message } from "./alerts";
 import { Listings, listings } from "./project/websocket/listings";
 import { deleted_file_variations } from "smc-util/delete-files";
+import { DirectoryListing, DirectoryListingEntry } from "smc-util/types";
 
 export { FILE_ACTIONS as file_actions, ProjectActions };
 
@@ -312,45 +313,51 @@ export class ProjectStore extends Store<ProjectStoreState> {
       ] as const,
       fn: () => {
         const search_escape_char = "/";
-        let listing = this.get("directory_listings").get(
+        const listing_raw = this.get("directory_listings").get(
           this.get("current_path")
         );
-        if (typeof listing === "string") {
+        if (listing_raw == null) {
+          return {};
+        }
+        const listing_files = listing_raw.get("files");
+        if (typeof listing_files === "string") {
           if (
-            listing.indexOf("ECONNREFUSED") !== -1 ||
-            listing.indexOf("ENOTFOUND") !== -1
+            listing_files.indexOf("ECONNREFUSED") !== -1 ||
+            listing_files.indexOf("ENOTFOUND") !== -1
           ) {
             return { error: "no_instance" }; // the host VM is down
-          } else if (listing.indexOf("o such path") !== -1) {
+          } else if (listing_files.indexOf("o such path") !== -1) {
             return { error: "no_dir" };
-          } else if (listing.indexOf("ot a directory") !== -1) {
+          } else if (listing_files.indexOf("ot a directory") !== -1) {
             return { error: "not_a_dir" };
-          } else if (listing.indexOf("not running") !== -1) {
+          } else if (listing_files.indexOf("not running") !== -1) {
             // yes, no underscore.
             return { error: "not_running" };
           } else {
-            return { error: listing };
+            return { error: listing_files };
           }
         }
-        if (listing == null) {
+        if (listing_files == null) {
           return {};
         }
-        if ((listing != null ? listing.errno : undefined) != null) {
-          return { error: misc.to_json(listing) };
+        if ((listing_files != null ? listing_files.errno : undefined) != null) {
+          return { error: misc.to_json(listing_files) };
         }
-        listing = listing.toJS();
+
+        // this this point we know we have good data and no error
+        const listing: DirectoryListing = listing_raw.toJS();
 
         if (this.get("other_settings").get("mask_files")) {
-          _compute_file_masks(listing);
+          _compute_file_masks(listing.files ?? []);
         }
 
         if (this.get("current_path") === ".snapshots") {
-          compute_snapshot_display_names(listing);
+          compute_snapshot_display_names(listing.files);
         }
 
         const search = this.get("file_search");
         if (search && search[0] !== search_escape_char) {
-          listing = _matched_files(search.toLowerCase(), listing);
+          listing.files = _matched_files(search.toLowerCase(), listing.files);
         }
 
         const sorter = (() => {
@@ -377,16 +384,19 @@ export class ProjectStore extends Store<ProjectStoreState> {
           }
         })();
 
-        listing.sort(sorter);
+        if (listing.files == null)
+          throw new Error("listing.files must be defined");
+
+        listing.files.sort(sorter);
 
         if (this.get("active_file_sort").get("is_descending")) {
-          listing.reverse();
+          listing.files.reverse();
         }
 
         if (!this.get("show_hidden")) {
-          listing = (() => {
-            const result: string[] = [];
-            for (const l of listing) {
+          listing.files = (() => {
+            const result: DirectoryListingEntry[] = [];
+            for (const l of listing.files) {
               if (!l.name.startsWith(".")) {
                 result.push(l);
               }
@@ -399,35 +409,36 @@ export class ProjectStore extends Store<ProjectStoreState> {
           // if we do not gray out files (and hence haven't computed the file mask yet)
           // we do it now!
           if (!this.get("other_settings").get("mask_files")) {
-            _compute_file_masks(listing);
+            _compute_file_masks(listing.files ?? []);
           }
 
-          const filtered: string[] = [];
-          for (const f of listing) {
+          const filtered: DirectoryListingEntry[] = [];
+          for (const f of listing.files) {
             if (!f.mask) filtered.push(f);
           }
-          listing = filtered;
+          listing.files = filtered;
         }
 
         const map = {};
-        for (var x of listing) {
+        for (const x of listing.files) {
           map[x.name] = x;
         }
 
-        x = {
-          listing,
+        const res = {
+          git_dir: listing.git_dir,
+          files: listing.files,
           public: {},
           path: this.get("current_path"),
           file_map: map,
         };
 
         _compute_public_files(
-          x,
+          res,
           this.get("stripped_public_paths"),
           this.get("current_path")
         );
 
-        return x;
+        return res;
       },
     },
 
@@ -576,22 +587,22 @@ export class ProjectStore extends Store<ProjectStoreState> {
         let directory_listings = this.get("directory_listings");
         for (const path of paths) {
           if (this.listings == null) return; // won't happen
-          let files;
+          let data;
           if (this.listings.get_missing(path)) {
             try {
-              files = immutable.fromJS(
+              data = immutable.fromJS(
                 await this.listings.get_listing_directly(path)
               );
             } catch (err) {
               console.warn(
                 `WARNING: problem getting directory listing ${err}; falling back`
               );
-              files = await this.listings.get_for_store(path);
+              data = await this.listings.get_for_store(path);
             }
           } else {
-            files = await this.listings.get_for_store(path);
+            data = await this.listings.get_for_store(path);
           }
-          directory_listings = directory_listings.set(path, files);
+          directory_listings = directory_listings.set(path, data);
         }
         const actions = redux.getProjectActions(this.project_id);
         actions.setState({ directory_listings });
@@ -604,30 +615,33 @@ export class ProjectStore extends Store<ProjectStoreState> {
   }
 }
 
-function _matched_files(search, listing) {
-  if (listing == null) {
+function _matched_files(
+  search: string,
+  files?: DirectoryListingEntry[]
+): DirectoryListingEntry[] {
+  if (files == null) {
     return [];
   }
   const words = misc.search_split(search);
-  const v: string[] = [];
-  for (const x of listing) {
+  const result: DirectoryListingEntry[] = [];
+  for (const x of files) {
     const name = (x.display_name ?? x.name ?? "").toLowerCase();
     if (
       misc.search_match(name, words) ||
       (x.isdir && misc.search_match(name + "/", words))
     ) {
-      v.push(x);
+      result.push(x);
     }
   }
-  return v;
+  return result;
 }
 
-function _compute_file_masks(listing): void {
+function _compute_file_masks(files: DirectoryListingEntry[]): void {
   // mask compiled files, e.g. mask 'foo.class' when 'foo.java' exists
   // the general outcome of this function is to set for some file entry objects
   // in "listing" the attribute <file>.mask=true
-  const filename_map = misc.dict(listing.map((item) => [item.name, item])); // map filename to file
-  for (const file of listing) {
+  const filename_map = misc.dict(files.map((item) => [item.name, item])); // map filename to file
+  for (const file of files) {
     // mask certain known directories
     if (MASKED_FILENAMES.indexOf(file.name) >= 0) {
       filename_map[file.name].mask = true;
@@ -689,7 +703,7 @@ function compute_snapshot_display_names(listing): void {
 
 // Mutates data to include info on public paths.
 function _compute_public_files(data, public_paths, current_path) {
-  const { listing } = data;
+  const { files } = data;
   const pub = data.public;
   if (public_paths != null && public_paths.size > 0) {
     const head = current_path ? current_path + "/" : "";
@@ -701,7 +715,7 @@ function _compute_public_files(data, public_paths, current_path) {
     }
     return (() => {
       const result: any = [];
-      for (x of listing) {
+      for (x of files) {
         const full = head + x.name;
         const p = misc.containing_public_path(full, paths);
         if (p != null) {
