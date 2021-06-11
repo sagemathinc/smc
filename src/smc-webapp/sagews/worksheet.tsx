@@ -7,12 +7,10 @@
 React component to render a Sage worksheet statically (for use by share server or public mode)
 */
 
-import { React, Component, Rendered } from "../app-framework";
+import * as React from "react";
 
-import { field_cmp } from "smc-util/misc";
-
+import { sortBy } from "lodash";
 import { Cell } from "./cell";
-
 import { Cell as CellType } from "./parse-sagews";
 
 interface Props {
@@ -20,9 +18,17 @@ interface Props {
   style?: object;
 }
 
-export class Worksheet extends Component<Props> {
-  private render_cell(cell: CellType): Rendered {
-    return (
+export function Worksheet({ sagews, style }: Props) {
+  const cells: CellType[] = [];
+  for (const cell of sagews) {
+    if (cell.type === "cell") {
+      cells.push(cell);
+    }
+  }
+  sortBy(cells, ["pos"]);
+  const v: JSX.Element[] = [];
+  for (const cell of cells) {
+    v.push(
       <Cell
         key={cell.id}
         input={cell.input ? cell.input : ""}
@@ -32,22 +38,5 @@ export class Worksheet extends Component<Props> {
     );
   }
 
-  private render_cells(): Rendered[] {
-    const cells: CellType[] = [];
-    for (const cell of this.props.sagews) {
-      if (cell.type === "cell") {
-        cells.push(cell);
-      }
-    }
-    cells.sort(field_cmp("pos"));
-    const v: Rendered[] = [];
-    for (const cell of cells) {
-      v.push(this.render_cell(cell));
-    }
-    return v;
-  }
-
-  render() {
-    return <div style={this.props.style}>{this.render_cells()}</div>;
-  }
+  return <div style={style}>{v}</div>;
 }

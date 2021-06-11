@@ -1,0 +1,31 @@
+{
+  "name": "cocalc-nextjs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "cocalc": "./cocalc/update.sh",
+    "dev": "NODE_PATH='' node server.js",
+    "build": "NODE_PATH='' next build",
+    "start": "NODE_PATH='' NODE_ENV=production node server.js",
+    "tsc": "NODE_PATH='' tsc --watch"
+  },
+  "dependencies": {
+    "@types/pg": "^7.14.11",
+    "antd": "^4.15.3",
+    "cocalc-codemirror-static": "^1.0.0",
+    "codemirror": "^5.61.0",
+    "katex": "^0.13.3",
+    "lodash": "^4.17.21",
+    "lru-cache": "^6.0.0",
+    "markdown-it-emoji": "^2.0.0",
+    "markdown-it-front-matter": "^0.2.3",
+    "next": "^10.2.0",
+    "pg": "^8.6.0",
+    "react": "17.0.2",
+    "react-dom": "17.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^17.0.3",
+    "typescript": "^4.2.3"
+  }
+}

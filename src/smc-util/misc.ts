@@ -68,12 +68,15 @@ export {
   local_storage_length,
 } from "./local-storage";
 
+import { replaceAll } from "./replace-all";
+export { replaceAll as replace_all };
+export { replaceAllFunction as replace_all_function } from "./replace-all";
+
 import * as sha1 from "sha1";
 export { sha1 };
 
 import * as lodash from "lodash";
 import * as getRandomValues from "get-random-values";
-import * as immutable from "immutable";
 
 export const keys: (any) => string[] = lodash.keys;
 
@@ -369,11 +372,14 @@ export function walltime(t?: number): number {
   return mswalltime() / 1000.0 - (t ?? 0);
 }
 
-// encode a UNIX path, which might have # and % in it.
-// Maybe alternatively, (encodeURIComponent(p) for p in path.split('/')).join('/') ?
+// encode a UNIX path for use in URL.
+// Path might have # and % and ? in it.
 export function encode_path(path) {
-  path = encodeURI(path); // doesn't escape # and ?, since they are special for urls (but not unix paths)
-  return path.replace(/#/g, "%23").replace(/\?/g, "%3F");
+  const v:string[] = [];
+  for (const p of path.split('/')) {
+    v.push(encodeURIComponent(p));
+  }
+  return v.join('/');
 }
 
 const reValidEmail = (function () {
@@ -496,36 +502,9 @@ export function getIn(x: any, path: string[], default_value?: any): any {
   return x === undefined ? default_value : x;
 }
 
-// see http://stackoverflow.com/questions/1144783/replacing-all-occurrences-of-a-string-in-javascript
-export function replace_all(
-  s: string,
-  search: string,
-  replace: string
-): string {
-  return s.split(search).join(replace);
-}
-
-// Similar to replace_all, except it takes as input a function replace_f, which
-// returns what to replace the i-th copy of search in string with.
-export function replace_all_function(
-  s: string,
-  search: string,
-  replace_f: (i: number) => string
-): string {
-  const v = s.split(search);
-  const w: string[] = [];
-  for (let i = 0; i < v.length; i++) {
-    w.push(v[i]);
-    if (i < v.length - 1) {
-      w.push(replace_f(i));
-    }
-  }
-  return w.join("");
-}
-
 export function path_to_title(path: string): string {
   const subtitle = separate_file_extension(path_split(path).tail).name;
-  return capitalize(replace_all(replace_all(subtitle, "-", " "), "_", " "));
+  return capitalize(replaceAll(replaceAll(subtitle, "-", " "), "_", " "));
 }
 
 // names is a Set<string>
@@ -2120,87 +2099,6 @@ export function jupyter_language_to_name(lang: string): string {
   } else {
     return lang.charAt(0).toUpperCase() + lang.slice(1);
   }
-}
-
-// Find the kernel whose name is closest to the given name.
-export function closest_kernel_match(
-  name: string,
-  kernel_list: immutable.List<immutable.Map<string, string>>
-): immutable.Map<string, string> {
-  name = name.toLowerCase().replace("matlab", "octave");
-  name = name === "python" ? "python3" : name;
-  let bestValue = -1;
-  let bestMatch: immutable.Map<string, string> | undefined = undefined;
-  for (let i = 0; i < kernel_list.size; i++) {
-    const k = kernel_list.get(i);
-    if (k == null) {
-      // This happened to Harald once when using the "mod sim py" custom image.
-      continue;
-    }
-    // filter out kernels with negative priority (using the priority
-    // would be great, though)
-    if (k.getIn(["metadata", "cocalc", "priority"], 0) < 0) continue;
-    const kernel_name = k.get("name")?.toLowerCase();
-    if (!kernel_name) continue;
-    let v = 0;
-    for (let j = 0; j < name.length; j++) {
-      if (name[j] === kernel_name[j]) {
-        v++;
-      } else {
-        break;
-      }
-    }
-    if (
-      v > bestValue ||
-      (v === bestValue &&
-        bestMatch &&
-        compareVersionStrings(k.get("name"), bestMatch.get("name")) === 1)
-    ) {
-      bestValue = v;
-      bestMatch = k;
-    }
-  }
-  if (bestMatch == null) {
-    // should be impossible in practice since kernel_list is non-empty and so
-    // on, but just in case...
-    return kernel_list.get(0) ?? immutable.Map<string, string>();
-  }
-  return bestMatch;
-}
-
-// compareVersionStrings takes two strings "a","b"
-// and returns 1 is "a" is bigger, 0 if they are the same, and -1 if "a" is smaller.
-// By "bigger" we compare the integer and non-integer parts of the strings separately.
-// Examples:
-//     - "sage.10" is bigger than "sage.9" (because 10 > 9)
-//     - "python.1" is bigger than "sage.9" (because "python" > "sage")
-//     - "sage.1.23" is bigger than "sage.0.456" (because 1 > 0)
-//     - "sage.1.2.3" is bigger than "sage.1.2" (because "." > "")
-function compareVersionStrings(a: string, b: string): -1 | 0 | 1 {
-  const av: string[] = a.split(/(\d+)/);
-  const bv: string[] = b.split(/(\d+)/);
-  for (let i = 0; i < Math.max(av.length, bv.length); i++) {
-    const l = av[i] ?? "";
-    const r = bv[i] ?? "";
-    if (/\d/.test(l) && /\d/.test(r)) {
-      const vA = parseInt(l);
-      const vB = parseInt(r);
-      if (vA > vB) {
-        return 1;
-      }
-      if (vA < vB) {
-        return -1;
-      }
-    } else {
-      if (l > r) {
-        return 1;
-      }
-      if (l < r) {
-        return -1;
-      }
-    }
-  }
-  return 0;
 }
 
 // Count number of occurrences of m in s-- see http://stackoverflow.com/questions/881085/count-the-number-of-occurences-of-a-character-in-a-string-in-javascript
