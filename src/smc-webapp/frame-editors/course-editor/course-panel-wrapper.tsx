@@ -25,6 +25,7 @@ import {
   AssignmentsMap,
   CourseSettingsRecord,
   StudentsMap,
+  GroupingsMap,
   HandoutsMap,
 } from "../../course/store";
 import { Map } from "immutable";
@@ -53,6 +54,7 @@ interface ReduxProps {
   project_map?: ProjectMap;
   assignments?: AssignmentsMap;
   handouts?: HandoutsMap;
+  groupings?: GroupingsMap;
   settings?: CourseSettingsRecord;
   configuring_projects?: boolean;
   activity?: Map<string, any>;
@@ -69,6 +71,7 @@ export interface PanelProps {
   project_map: ProjectMap;
   assignments: AssignmentsMap;
   handouts: HandoutsMap;
+  groupings: GroupingsMap;
   settings: CourseSettingsRecord;
   redux: AppRedux;
   actions: CourseActions;
@@ -83,6 +86,7 @@ class CoursePanelWrapper extends Component<FrameProps & ReduxProps> {
         students: rtypes.immutable.Map,
         assignments: rtypes.immutable.Map,
         handouts: rtypes.immutable.Map,
+        groupings: rtypes.immutable.Map,
         settings: rtypes.immutable.Map,
         configuring_projects: rtypes.bool,
         error: rtypes.string,
@@ -104,6 +108,7 @@ class CoursePanelWrapper extends Component<FrameProps & ReduxProps> {
       this.props.project_map == null ||
       this.props.assignments == null ||
       this.props.handouts == null ||
+      this.props.groupings == null ||
       this.props.settings == null
     ) {
       return <Loading theme={"medium"} />;
@@ -121,6 +126,7 @@ class CoursePanelWrapper extends Component<FrameProps & ReduxProps> {
       project_map: this.props.project_map,
       assignments: this.props.assignments,
       handouts: this.props.handouts,
+      groupings: this.props.groupings,
       configuring_projects: this.props.configuring_projects,
       settings: this.props.settings,
       redux,
@@ -144,14 +150,17 @@ class CoursePanelWrapper extends Component<FrameProps & ReduxProps> {
     students: number;
     assignments: number;
     handouts: number;
+    groupings: number;
   } {
     const store: CourseStore = redux.getStore(name) as CourseStore;
-    if (store == null) return { students: 0, assignments: 0, handouts: 0 }; // shouldn't happen?
+    if (store == null)
+      return { students: 0, assignments: 0, handouts: 0, groupings: 0 }; // shouldn't happen?
     // have to use these functions on the store since only count non-deleted ones
     return {
       students: store.num_students(),
       assignments: store.num_assignments(),
       handouts: store.num_handouts(),
+      groupings: store.num_groupings(),
     };
   }
 

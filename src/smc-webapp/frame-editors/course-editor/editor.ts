@@ -17,6 +17,7 @@ import {
   SharedProject,
   Students,
   Handouts,
+  Groupings,
 } from "./course-panels";
 
 const buttons = set([
@@ -48,6 +49,13 @@ export const EDITOR_SPEC = {
     name: "Handouts",
     icon: "copy",
     component: Handouts,
+    buttons,
+  },
+  course_groupings: {
+    short: "Groupings",
+    name: "Groupings",
+    icon: "user-friends",
+    component: Groupings,
     buttons,
   },
   course_configuration: {

@@ -25,6 +25,7 @@ import { StudentsActions } from "./students/actions";
 import { StudentProjectsActions } from "./student-projects/actions";
 import { AssignmentsActions } from "./assignments/actions";
 import { HandoutsActions } from "./handouts/actions";
+import { GroupingsActions } from "./groupings/actions";
 import { ConfigurationActions } from "./configuration/actions";
 import { ExportActions } from "./export/actions";
 import { ProjectsStore } from "../projects/store";
@@ -36,6 +37,7 @@ const primary_key = {
   students: "student_id",
   assignments: "assignment_id",
   handouts: "handout_id",
+  groupings: "grouping_id",
 };
 
 // Requires a syncdb to be set later
@@ -49,6 +51,7 @@ export class CourseActions extends Actions<CourseState> {
   public shared_project: SharedProjectActions;
   public assignments: AssignmentsActions;
   public handouts: HandoutsActions;
+  public groupings: GroupingsActions;
   public configuration: ConfigurationActions;
   public export: ExportActions;
   private state: "init" | "ready" | "closed" = "init";
@@ -65,6 +68,7 @@ export class CourseActions extends Actions<CourseState> {
     this.student_projects = bind_methods(new StudentProjectsActions(this));
     this.assignments = bind_methods(new AssignmentsActions(this));
     this.handouts = bind_methods(new HandoutsActions(this));
+    this.groupings = bind_methods(new GroupingsActions(this));
     this.configuration = bind_methods(new ConfigurationActions(this));
     this.export = bind_methods(new ExportActions(this));
   }
@@ -106,7 +110,8 @@ export class CourseActions extends Actions<CourseState> {
         store.get("students") != null &&
         store.get("assignments") != null &&
         store.get("settings") != null &&
-        store.get("handouts") != null
+        store.get("handouts") != null &&
+        store.get("groupings") != null
       )
     ) {
       return false;

@@ -77,6 +77,14 @@ export interface SyncDBRecordHandout {
   };
 }
 
+export interface SyncDBRecordGrouping {
+  table: string;
+  grouping_id?: string;
+  title?: string;
+  description?: string;
+  deleted?: boolean;
+}
+
 export interface SyncDBRecordStudent {
   table: string;
   student_id?: string;
@@ -95,6 +103,7 @@ export type SyncDBRecord = SyncDBRecordBase &
   SyncDBRecordSettings &
   SyncDBRecordAssignment &
   SyncDBRecordHandout &
+  SyncDBRecordGrouping &
   SyncDBRecordStudent;
 
 export type AssignmentCopyStep =
